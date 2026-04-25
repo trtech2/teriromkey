@@ -21,9 +21,9 @@ body {
 
 .hero {
   position: fixed;
-  top: 50%;
+  bottom: 6vh;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   z-index: 10;
   text-align: center;
   pointer-events: none;
@@ -80,28 +80,13 @@ body {
   transform: translateY(-2px);
 }
 
-.custom-cursor {
+#cometCanvas {
   position: fixed;
-  width: 40px;
-  height: 40px;
-  border: 2px solid #F4EFE6;
-  border-radius: 50%;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
   z-index: 1000;
-  transform: translate(-50%, -50%);
-  transition: width 0.2s ease, height 0.2s ease, border-width 0.2s ease;
-  background: transparent;
-  will-change: left, top;
-}
-
-.custom-cursor::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 8px;
-  height: 8px;
-  background: #F4EFE6;
-  border-radius: 50%;
+  mix-blend-mode: screen;
 }

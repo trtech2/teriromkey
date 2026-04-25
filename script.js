@@ -111,7 +111,9 @@ class GradientBackground {
       uGradientSize: { value: 0.45 },
       uGradientCount: { value: 12.0 },
       uColor1Weight: { value: 0.5 },
-      uColor2Weight: { value: 1.8 }
+      uColor2Weight: { value: 1.8 },
+      uMouse: { value: new THREE.Vector2(0.5, 0.5) },
+      uMouseHot: { value: new THREE.Vector3(0.985, 0.55, 0.32) }
     };
   }
 
@@ -146,6 +148,8 @@ class GradientBackground {
         uniform float uGradientCount;
         uniform float uColor1Weight;
         uniform float uColor2Weight;
+        uniform vec2 uMouse;
+        uniform vec3 uMouseHot;
 
         varying vec2 vUv;
         #define PI 3.14159265359
@@ -206,6 +210,14 @@ class GradientBackground {
           color += uColor4 * i10 * (0.55 + 0.45*cos(time*uSpeed*1.7  )) * uColor2Weight;
           color += mix(uColor1, uColor3, ri1) * 0.45 * uColor1Weight;
           color += mix(uColor2, uColor4, ri2) * 0.40 * uColor2Weight;
+
+          // Mouse-driven hot spot — a strong, large gradient center under the cursor
+          float mouseDist = length(uv - uMouse);
+          float mouseInfluence = 1.0 - smoothstep(0.0, 0.55, mouseDist);
+          color += uMouseHot * pow(mouseInfluence, 1.4) * 2.6;
+          // tight bright core
+          float core = 1.0 - smoothstep(0.0, 0.08, mouseDist);
+          color += uMouseHot * core * 1.4;
 
           color = clamp(color, vec3(0.0), vec3(1.0)) * uIntensity;
           float lum = dot(color, vec3(0.299, 0.587, 0.114));
@@ -277,7 +289,7 @@ class App {
       powerPreference: "high-performance",
       alpha: false,
       stencil: false,
-      depth: false
+      depth: true
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -294,11 +306,214 @@ class App {
     this.gradientBackground = new GradientBackground(this);
     this.gradientBackground.uniforms.uTouchTexture.value = this.touchTexture.texture;
 
+    this.mouseNorm = { x: 0, y: 0 };
+    this.lastMouse = { x: 0, y: 0 };
+    this.rotVelocity = { x: 0, y: 0 };
+    this.particles = [];
+    this.photos = [];
+
     this.init();
+  }
+
+  initPhotos() {
+    const files = [
+      "images/exhibition.jpg",
+      "images/bourse.jpg",
+      "images/driveby.jpg",
+      "images/upstate.jpg",
+      "images/portraits.jpg"
+    ];
+    const loader = new THREE.TextureLoader();
+
+    // place photos on a ring around the star
+    const count = files.length;
+    const ringRadius = 18;
+    files.forEach((src, i) => {
+      const tex = loader.load(src, (t) => {
+        // scale plane to image aspect ratio
+        const aspect = t.image.width / t.image.height;
+        const h = 5;
+        mesh.scale.set(h * aspect, h, 1);
+      });
+      tex.colorSpace = THREE.SRGBColorSpace || tex.colorSpace;
+
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        opacity: 0.92,
+        side: THREE.DoubleSide
+      });
+      const geo = new THREE.PlaneGeometry(1, 1);
+      const mesh = new THREE.Mesh(geo, mat);
+
+      const angle = (i / count) * Math.PI * 2;
+      mesh.userData = {
+        baseAngle: angle,
+        baseRadius: ringRadius,
+        z: (Math.random() - 0.5) * 16,
+        floatSpeed: 0.3 + Math.random() * 0.4,
+        floatAmp: 1.5 + Math.random() * 1.5,
+        rotSpeed: (Math.random() - 0.5) * 0.4,
+        phase: Math.random() * Math.PI * 2
+      };
+
+      this.scene.add(mesh);
+      this.photos.push(mesh);
+    });
+  }
+
+  updatePhotos(delta) {
+    if (!this.photos.length) return;
+    const t = performance.now() * 0.0003;
+    // mouse parallax
+    const mx = this.mouseNorm.x * 2.5;
+    const my = this.mouseNorm.y * 2.5;
+    for (const p of this.photos) {
+      const d = p.userData;
+      const angle = d.baseAngle + t * 0.4;
+      const r = d.baseRadius + Math.sin(t * d.floatSpeed * 4 + d.phase) * 1.2;
+      const targetX = Math.cos(angle) * r + mx;
+      const targetY = Math.sin(angle) * r * 0.55 + Math.sin(t * d.floatSpeed * 3 + d.phase) * d.floatAmp + my;
+      const targetZ = d.z + Math.cos(t * d.floatSpeed * 2 + d.phase) * 3;
+      p.position.x += (targetX - p.position.x) * 0.05;
+      p.position.y += (targetY - p.position.y) * 0.05;
+      p.position.z += (targetZ - p.position.z) * 0.05;
+      p.rotation.y += d.rotSpeed * delta;
+      p.rotation.z = Math.sin(t * d.floatSpeed * 2 + d.phase) * 0.1;
+    }
+  }
+
+  buildStarGeometry(outer, inner, depth) {
+    const shape = new THREE.Shape();
+    const points = 5;
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 === 0 ? outer : inner;
+      const a = (i / (points * 2)) * Math.PI * 2 - Math.PI / 2;
+      const x = Math.cos(a) * r;
+      const y = Math.sin(a) * r;
+      if (i === 0) shape.moveTo(x, y);
+      else shape.lineTo(x, y);
+    }
+    shape.closePath();
+    return new THREE.ExtrudeGeometry(shape, {
+      depth,
+      bevelEnabled: true,
+      bevelThickness: depth * 0.3,
+      bevelSize: depth * 0.3,
+      bevelSegments: 3,
+      curveSegments: 6
+    });
+  }
+
+  initStar() {
+    const geo = this.buildStarGeometry(4.5, 2.0, 1.2);
+    geo.center();
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xf4efe6,
+      metalness: 0.85,
+      roughness: 0.25,
+      emissive: 0xe8633c,
+      emissiveIntensity: 0.35
+    });
+    this.star = new THREE.Mesh(geo, mat);
+    this.star.position.set(0, 0, 20);
+    this.scene.add(this.star);
+
+    const ambient = new THREE.AmbientLight(0xfff4e6, 0.6);
+    const key = new THREE.DirectionalLight(0xfff0d8, 1.4);
+    key.position.set(15, 20, 30);
+    const fill = new THREE.DirectionalLight(0xe8633c, 0.6);
+    fill.position.set(-20, -10, 15);
+    this.scene.add(ambient, key, fill);
+
+    // shared geometry for particle stars
+    this.particleGeo = this.buildStarGeometry(0.7, 0.3, 0.2);
+    this.particleGeo.center();
+  }
+
+  spawnParticles(count) {
+    for (let i = 0; i < count; i++) {
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0xf4efe6,
+        metalness: 0.7,
+        roughness: 0.3,
+        emissive: 0xe8633c,
+        emissiveIntensity: 0.6,
+        transparent: true,
+        opacity: 1
+      });
+      const mesh = new THREE.Mesh(this.particleGeo, mat);
+      mesh.position.copy(this.star.position);
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 12 + Math.random() * 14;
+      mesh.userData = {
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        vz: (Math.random() - 0.5) * 6,
+        rx: (Math.random() - 0.5) * 8,
+        ry: (Math.random() - 0.5) * 8,
+        rz: (Math.random() - 0.5) * 8,
+        life: 0,
+        maxLife: 1.2 + Math.random() * 0.6
+      };
+      this.scene.add(mesh);
+      this.particles.push(mesh);
+    }
+  }
+
+  updateStarAndParticles(delta) {
+    if (!this.star) return;
+
+    // Smooth rotation toward mouse position; mouse velocity drives extra spin
+    const targetX = this.mouseNorm.y * 0.6;
+    const targetY = this.mouseNorm.x * 0.9;
+    this.star.rotation.x += (targetX - this.star.rotation.x) * 0.08 + this.rotVelocity.x;
+    this.star.rotation.y += (targetY - this.star.rotation.y) * 0.08 + this.rotVelocity.y;
+    this.star.rotation.z += 0.2 * delta;
+
+    // gentle floating
+    this.star.position.y = Math.sin(performance.now() * 0.0008) * 0.6;
+
+    // measure spin speed; emit particles when spinning fast
+    const spin = Math.hypot(this.rotVelocity.x, this.rotVelocity.y);
+    if (spin > 0.04) {
+      const burst = Math.min(4, Math.floor(spin * 30));
+      this.spawnParticles(burst);
+    }
+
+    // decay rotational velocity (momentum)
+    this.rotVelocity.x *= 0.9;
+    this.rotVelocity.y *= 0.9;
+
+    // update particles
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      const d = p.userData;
+      d.life += delta;
+      const t = d.life / d.maxLife;
+      p.position.x += d.vx * delta;
+      p.position.y += d.vy * delta;
+      p.position.z += d.vz * delta;
+      p.rotation.x += d.rx * delta;
+      p.rotation.y += d.ry * delta;
+      p.rotation.z += d.rz * delta;
+      d.vx *= 0.97;
+      d.vy *= 0.97;
+      p.material.opacity = 1 - t;
+      const s = 1 - t * 0.4;
+      p.scale.set(s, s, s);
+      if (t >= 1) {
+        this.scene.remove(p);
+        p.material.dispose();
+        this.particles.splice(i, 1);
+      }
+    }
   }
 
   init() {
     this.gradientBackground.init();
+    this.initStar();
+    this.initPhotos();
     this.tick();
 
     window.addEventListener("resize", () => this.onResize());
@@ -312,10 +527,19 @@ class App {
   }
 
   onMouseMove(e) {
-    this.touchTexture.addTouch({
-      x: e.clientX / window.innerWidth,
-      y: 1 - e.clientY / window.innerHeight
-    });
+    const nx = (e.clientX / window.innerWidth) * 2 - 1;
+    const ny = -((e.clientY / window.innerHeight) * 2 - 1);
+    this.rotVelocity.x += (ny - this.lastMouse.y) * 0.6;
+    this.rotVelocity.y += (nx - this.lastMouse.x) * 0.6;
+    this.lastMouse.x = nx;
+    this.lastMouse.y = ny;
+    this.mouseNorm.x = nx;
+    this.mouseNorm.y = ny;
+
+    const ux = e.clientX / window.innerWidth;
+    const uy = 1 - e.clientY / window.innerHeight;
+    this.touchTexture.addTouch({ x: ux, y: uy });
+    this.gradientBackground.uniforms.uMouse.value.set(ux, uy);
   }
 
   getViewSize() {
@@ -328,6 +552,8 @@ class App {
     const delta = Math.min(this.clock.getDelta(), 0.1);
     this.touchTexture.update();
     this.gradientBackground.update(delta);
+    this.updateStarAndParticles(delta);
+    this.updatePhotos(delta);
     this.renderer.render(this.scene, this.camera);
     requestAnimationFrame(() => this.tick());
   }
@@ -342,36 +568,106 @@ class App {
 
 const app = new App();
 
-// Custom cursor
-const cursor = document.getElementById("customCursor");
-let mouseX = 0, mouseY = 0;
-let cursorAnimating = false;
+// Comet cursor — colored head with fading trail drawn on a full-screen canvas
+(function comet() {
+  const canvas = document.getElementById("cometCanvas");
+  const ctx = canvas.getContext("2d");
+  let dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-document.addEventListener("mousemove", (e) => {
-  mouseX = e.clientX;
-  mouseY = e.clientY;
-  if (!cursorAnimating) {
-    cursorAnimating = true;
-    animateCursor();
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = window.innerWidth * dpr;
+    canvas.height = window.innerHeight * dpr;
+    canvas.style.width = window.innerWidth + "px";
+    canvas.style.height = window.innerHeight + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
-});
+  resize();
+  window.addEventListener("resize", resize);
 
-function animateCursor() {
-  cursor.style.left = mouseX + "px";
-  cursor.style.top = mouseY + "px";
-  requestAnimationFrame(animateCursor);
-}
+  const trail = [];
+  const MAX_TRAIL = 38;
+  let mouseX = window.innerWidth / 2;
+  let mouseY = window.innerHeight / 2;
+  let lastT = performance.now();
 
-// Grow cursor over links
-document.querySelectorAll("a").forEach((el) => {
-  el.addEventListener("mouseenter", () => {
-    cursor.style.width = "54px";
-    cursor.style.height = "54px";
-    cursor.style.borderWidth = "3px";
+  // hue cycles slowly so the comet shifts color through coral → cream → teal
+  let hue = 18; // start near coral
+
+  window.addEventListener("mousemove", (e) => {
+    mouseX = e.clientX;
+    mouseY = e.clientY;
   });
-  el.addEventListener("mouseleave", () => {
-    cursor.style.width = "40px";
-    cursor.style.height = "40px";
-    cursor.style.borderWidth = "2px";
+  window.addEventListener("touchmove", (e) => {
+    const t = e.touches[0];
+    mouseX = t.clientX;
+    mouseY = t.clientY;
   });
-});
+
+  function frame(now) {
+    const dt = Math.min((now - lastT) / 1000, 0.05);
+    lastT = now;
+    hue += dt * 18; // slow color shift
+
+    trail.push({ x: mouseX, y: mouseY, t: 0, hue });
+    if (trail.length > MAX_TRAIL) trail.shift();
+
+    // age points
+    for (const p of trail) p.t += dt;
+
+    // fade frame so previous draws decay (motion-blur look)
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+
+    // draw trail (additive)
+    ctx.globalCompositeOperation = "lighter";
+
+    for (let i = 1; i < trail.length; i++) {
+      const a = trail[i - 1];
+      const b = trail[i];
+      const lifeRatio = i / trail.length;
+      const alpha = lifeRatio * 0.85;
+      const radius = 2 + lifeRatio * 14;
+      const h = (b.hue + (1 - lifeRatio) * 80) % 360;
+      const grad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, radius);
+      grad.addColorStop(0, `hsla(${h}, 90%, 65%, ${alpha})`);
+      grad.addColorStop(1, `hsla(${h}, 90%, 50%, 0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // connector segment between consecutive points
+      ctx.strokeStyle = `hsla(${h}, 95%, 70%, ${alpha * 0.7})`;
+      ctx.lineWidth = lifeRatio * 5;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+
+    // bright comet head
+    const head = trail[trail.length - 1];
+    if (head) {
+      const headGrad = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, 28);
+      headGrad.addColorStop(0, `hsla(${hue}, 100%, 85%, 1)`);
+      headGrad.addColorStop(0.4, `hsla(${hue}, 95%, 60%, 0.6)`);
+      headGrad.addColorStop(1, `hsla(${hue}, 95%, 50%, 0)`);
+      ctx.fillStyle = headGrad;
+      ctx.beginPath();
+      ctx.arc(head.x, head.y, 28, 0, Math.PI * 2);
+      ctx.fill();
+
+      // crisp inner core
+      ctx.fillStyle = `hsla(${hue}, 100%, 95%, 0.9)`;
+      ctx.beginPath();
+      ctx.arc(head.x, head.y, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
