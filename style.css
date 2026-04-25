@@ -31,22 +31,23 @@ body {
 
 .name {
   font-family: "Syne", sans-serif;
-  font-size: clamp(3.5rem, 9vw, 9rem);
-  font-weight: 800;
-  color: white;
-  letter-spacing: -0.03em;
+  font-size: clamp(3.5rem, 9vw, 8.5rem);
+  font-weight: 600;
+  color: #F4EFE6;
+  letter-spacing: -0.02em;
   line-height: 1;
   white-space: nowrap;
 }
 
 .tagline {
   font-family: "Inter", sans-serif;
-  font-size: clamp(0.875rem, 1.5vw, 1.125rem);
+  font-size: clamp(0.75rem, 1.1vw, 0.95rem);
   font-weight: 300;
-  color: rgba(255, 255, 255, 0.6);
-  letter-spacing: 0.3em;
+  color: rgba(244, 239, 230, 0.75);
+  letter-spacing: 0.25em;
   text-transform: uppercase;
-  margin-top: 1rem;
+  margin-top: 1.5rem;
+  font-style: italic;
 }
 
 .links {
@@ -59,23 +60,23 @@ body {
 
 .links a {
   font-family: "Syne", sans-serif;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   font-weight: 500;
-  color: white;
+  color: #F4EFE6;
   text-decoration: none;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  padding: 0.6rem 1.5rem;
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  padding: 0.7rem 1.6rem;
+  border: 1px solid rgba(244, 239, 230, 0.35);
   border-radius: 100px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(244, 239, 230, 0.06);
   backdrop-filter: blur(10px);
   transition: background 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
 }
 
 .links a:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.6);
+  background: rgba(232, 99, 60, 0.25);
+  border-color: rgba(244, 239, 230, 0.7);
   transform: translateY(-2px);
 }
 
@@ -83,7 +84,7 @@ body {
   position: fixed;
   width: 40px;
   height: 40px;
-  border: 2px solid white;
+  border: 2px solid #F4EFE6;
   border-radius: 50%;
   pointer-events: none;
   z-index: 1000;
@@ -101,6 +102,6 @@ body {
   transform: translate(-50%, -50%);
   width: 8px;
   height: 8px;
-  background: white;
+  background: #F4EFE6;
   border-radius: 50%;
 }
