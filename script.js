@@ -568,6 +568,129 @@ class App {
 
 const app = new App();
 
+// Procedural zap sound generator (Web Audio API)
+class Zapper {
+  constructor() {
+    this.ctx = null;
+    this.master = null;
+    this.lastCursorZap = 0;
+    this.lastStarZap = 0;
+    this.unlock = this.unlock.bind(this);
+    window.addEventListener("pointerdown", this.unlock, { once: true });
+    window.addEventListener("mousemove", this.unlock, { once: true });
+    window.addEventListener("touchstart", this.unlock, { once: true });
+  }
+
+  unlock() {
+    if (this.ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    this.ctx = new AC();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.18;
+    this.master.connect(this.ctx.destination);
+    if (this.ctx.state === "suspended") this.ctx.resume();
+  }
+
+  // sharp, short electric tick — for the cursor
+  cursorZap(intensity = 1) {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    if (now - this.lastCursorZap < 0.04) return; // throttle
+    this.lastCursorZap = now;
+
+    const dur = 0.06 + Math.random() * 0.04;
+    const osc = this.ctx.createOscillator();
+    osc.type = "square";
+    const startFreq = 1800 + Math.random() * 1400;
+    osc.frequency.setValueAtTime(startFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(180, now + dur);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.25 * Math.min(intensity, 1.5), now + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "highpass";
+    filter.frequency.value = 600;
+
+    osc.connect(filter).connect(gain).connect(this.master);
+    osc.start(now);
+    osc.stop(now + dur + 0.02);
+
+    // tiny noise burst for crackle
+    this.noiseBurst(now, 0.04, 0.18 * intensity);
+  }
+
+  // bigger, deeper zap — for star bursts
+  starZap(intensity = 1) {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    if (now - this.lastStarZap < 0.08) return;
+    this.lastStarZap = now;
+
+    const dur = 0.28 + Math.random() * 0.15;
+
+    // descending sweep
+    const osc1 = this.ctx.createOscillator();
+    osc1.type = "sawtooth";
+    osc1.frequency.setValueAtTime(900 + Math.random() * 400, now);
+    osc1.frequency.exponentialRampToValueAtTime(80, now + dur);
+
+    // detuned partner for richness
+    const osc2 = this.ctx.createOscillator();
+    osc2.type = "square";
+    osc2.frequency.setValueAtTime(450 + Math.random() * 200, now);
+    osc2.frequency.exponentialRampToValueAtTime(60, now + dur);
+    osc2.detune.value = 12;
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.4 * Math.min(intensity, 1.5), now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(4000, now);
+    filter.frequency.exponentialRampToValueAtTime(400, now + dur);
+    filter.Q.value = 6;
+
+    osc1.connect(filter);
+    osc2.connect(filter);
+    filter.connect(gain).connect(this.master);
+    osc1.start(now); osc2.start(now);
+    osc1.stop(now + dur + 0.05); osc2.stop(now + dur + 0.05);
+
+    this.noiseBurst(now, 0.1, 0.3 * intensity);
+  }
+
+  noiseBurst(when, dur, level) {
+    const buf = this.ctx.createBuffer(1, this.ctx.sampleRate * dur, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const gain = this.ctx.createGain();
+    gain.gain.value = level;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 2200;
+    filter.Q.value = 1.2;
+    src.connect(filter).connect(gain).connect(this.master);
+    src.start(when);
+  }
+}
+
+const zapper = new Zapper();
+
+// Hook starZap into the star particle bursts
+const _origSpawn = App.prototype.spawnParticles;
+App.prototype.spawnParticles = function (count) {
+  _origSpawn.call(this, count);
+  zapper.starZap(Math.min(0.6 + count * 0.15, 1.4));
+};
+
 // Comet cursor — colored head with fading trail drawn on a full-screen canvas
 (function comet() {
   const canvas = document.getElementById("cometCanvas");
@@ -594,7 +717,17 @@ const app = new App();
   // hue cycles slowly so the comet shifts color through coral → cream → teal
   let hue = 18; // start near coral
 
+  let lastZapX = mouseX, lastZapY = mouseY;
   window.addEventListener("mousemove", (e) => {
+    const dx = e.clientX - lastZapX;
+    const dy = e.clientY - lastZapY;
+    const dist = Math.hypot(dx, dy);
+    // zap when the cursor moves a meaningful distance (intensity scales with speed)
+    if (dist > 14) {
+      zapper.cursorZap(Math.min(dist / 60, 1.2));
+      lastZapX = e.clientX;
+      lastZapY = e.clientY;
+    }
     mouseX = e.clientX;
     mouseY = e.clientY;
   });
